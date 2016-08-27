@@ -15,14 +15,15 @@ endif
 INC += -I.
 INC += -I..
 INC += -I../lib/mp-readline
-INC += -I../stmhal
+# INC += -I../stmhal not an ST part
 INC += -I$(BUILD)
 
 ifeq ($(CROSS), 1)
-DFU = ../tools/dfu.py
-PYDFU = ../tools/pydfu.py
-CFLAGS_CORTEX_M4 = -mthumb -mtune=cortex-m4 -mabi=aapcs-linux -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -fsingle-precision-constant -Wdouble-promotion
-CFLAGS = $(INC) -Wall -Werror -ansi -std=gnu99 -nostdlib $(CFLAGS_CORTEX_M4) $(COPT)
+# DFU = ../tools/dfu.py
+# PYDFU = ../tools/pydfu.py
+# CFLAGS_CORTEX_M4 = -mthumb -mtune=cortex-m4 -mabi=aapcs-linux -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -fsingle-precision-constant -Wdouble-promotion
+# CFLAGS = $(INC) -Wall -Werror -ansi -std=gnu99 -nostdlib $(CFLAGS_CORTEX_M4) $(COPT)
+CFLAGS = $(INC) -Wall -O2 -nostdlib -nostartfiles -ffreestanding
 else
 CFLAGS = -m32 $(INC) -Wall -Werror -ansi -std=gnu99 $(COPT)
 endif
@@ -35,7 +36,7 @@ CFLAGS += -Os -DNDEBUG
 endif
 
 ifeq ($(CROSS), 1)
-LDFLAGS = -nostdlib -T stm32f405.ld -Map=$@.map --cref
+# LDFLAGS = -nostdlib -T stm32f405.ld -Map=$@.map --cref
 else
 LD = gcc
 LDFLAGS = -m32 -Wl,-Map=$@.map,--cref
@@ -55,7 +56,8 @@ SRC_C = \
 OBJ = $(PY_O) $(addprefix $(BUILD)/, $(SRC_C:.c=.o))
 
 ifeq ($(CROSS), 1)
-all: $(BUILD)/firmware.dfu
+# all: $(BUILD)/firmware.dfu
+all : kernel.img
 else
 all: $(BUILD)/firmware.elf
 endif
@@ -69,14 +71,28 @@ $(BUILD)/firmware.elf: $(OBJ)
 	$(Q)$(LD) $(LDFLAGS) -o $@ $^ $(LIBS)
 	$(Q)$(SIZE) $@
 
-$(BUILD)/firmware.dfu: $(BUILD)/firmware.elf
-	$(ECHO) "Create $@"
-	$(Q)$(OBJCOPY) -O binary -j .isr_vector -j .text -j .data $^ $(BUILD)/firmware.bin
-	$(Q)$(PYTHON) $(DFU) -b 0x08000000:$(BUILD)/firmware.bin $@
+# $(BUILD)/firmware.dfu: $(BUILD)/firmware.elf
+# 	$(ECHO) "Create $@"
+# 	$(Q)$(OBJCOPY) -O binary -j .isr_vector -j .text -j .data $^ $(BUILD)/firmware.bin
+# 	$(Q)$(PYTHON) $(DFU) -b 0x08000000:$(BUILD)/firmware.bin $@
+vectors.o : vectors.s
+	$(CROSS_COMPILE)as vectors.s -o vectors.o
 
-deploy: $(BUILD)/firmware.dfu
-	$(ECHO) "Writing $< to the board"
-	$(Q)$(PYTHON) $(PYDFU) -u $<
+bootloader07.o : bootloader07.c
+	$(CROSS_COMPILE)gcc $(CFLAGS) -c bootloader07.c -o bootloader07.o
+
+periph.o : periph.c 
+	$(CROSS_COMPILE)gcc $(CFLAGS) -c periph.c -o periph.o
+
+kernel.img : loader vectors.o periph.o bootloader07.o 
+	$(CROSS_COMPILE)ld vectors.o periph.o bootloader07.o -T loader -o bootloader07.elf
+	$(CROSS_COMPILE)objdump -D bootloader07.elf > bootloader07.list
+	$(CROSS_COMPILE)objcopy bootloader07.elf -O ihex bootloader07.hex
+	$(CROSS_COMPILE)objcopy bootloader07.elf -O binary kernel.img
+
+# deploy: $(BUILD)/firmware.dfu
+# 	$(ECHO) "Writing $< to the board"
+# 	$(Q)$(PYTHON) $(PYDFU) -u $<
 
 # Run emulation build on a POSIX system with suitable terminal settings
 run:
