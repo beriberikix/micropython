@@ -8,6 +8,8 @@
 *.hex
 *.dis
 *.exe
+*.list
+*.img
 
 # Packages 
 ############
